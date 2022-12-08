@@ -152,21 +152,18 @@ def subject_comparison(df: pd.DataFrame, outdir: Path, dset: str) -> \
     N = len(df)
     dist = np.zeros((N, N))
 
-    # Create lambda for inserting comparisons in the matrix
-    sub = sorted(df['subject'].unique())
-    ses = sorted(df['session'].unique())
-    nses = len(ses)
-    loc = lambda su, se: sub.index(su)*nses + ses.index(se)
+    # Sort values to ensure neighbours end up next to one another in the plot
+    df = df.sort_values(['subject', 'session'])
 
     # Compare all pairs of subjects x sessions
     for idx, r1 in df.iterrows():
-        for jdx, r2 in df.iloc[idx:].iterrows():
-            loc1 = loc(r1['subject'], r1['session'])
-            loc2 = loc(r2['subject'], r2['session'])
-    
+        for jdx, r2 in df.iterrows():
+            if jdx < idx:
+                continue
             # Compute Kendall Tau statistic (aka bubble-sort distance)
             csim = kendalltau(r1['rank_corr'], r2['rank_corr'])[0]
-            dist[loc1, loc2] = csim
+
+            dist[idx, jdx] = csim
 
             # Prepare dataframe entry
             consistency += [{
