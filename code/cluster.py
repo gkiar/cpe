@@ -14,6 +14,7 @@ import pyarrow as pa
 import pandas as pd
 import numpy as np
 import json
+import os
 
 
 from sklearn.manifold import TSNE, SpectralEmbedding, MDS
@@ -95,6 +96,7 @@ def compute_similarity(df: pd.DataFrame, outdir: Path, dset: str) -> \
     #  without re-sorting the columns, we'll still have a block-structure
 
     # Create empty list to store similarity results
+    outpattr = str(outdir / "individual") + "/{0}_{1}_consistency.png"
     similarity = []
     for idx, ss in enumerate(subses):
         # Filter df by subject x session, and sort by COIs
@@ -123,9 +125,13 @@ def compute_similarity(df: pd.DataFrame, outdir: Path, dset: str) -> \
             'rank_corr' : rank_corr
         }]
 
-        # Optionally, plot
-        # TODO: add writing to file here
-        # sns.clustermap(rank_corr)
+        # Plot
+        plt.imshow(rank_corr)
+        plt.title("{0} {1}".format(dset, ss))
+        plt.savefig(outpattr.format(dset, ss))
+
+    os.system("gifski -r 6 -o {0} {1}".format(outdir/ "{0}_individual.gif".format(dset),
+                                              outpattr.format('*', '*')))
 
     return (pd.DataFrame.from_dict(similarity), ref_order)
 
@@ -177,7 +183,7 @@ def subject_comparison(df: pd.DataFrame, outdir: Path, dset: str) -> \
     # Complete the matrix
     dist += dist.T - np.eye(N)
 
-    # Optionally, plot
+    # Plot
     sns.clustermap(dist)
     plt.savefig(outdir / "{0}_consistency.png".format(dset))
 
@@ -206,14 +212,19 @@ def main():
 
     # Compute pipeline similarities, and then consolidate results
     outdir_s = outdir / "similarities"
-    outdir_s.mkdir(exist_ok=True)
+    (outdir_s / "individual").mkdir(parents=True, exist_ok=True)
     df_sim, sorting = compute_similarity(df, outdir_s, dset=modif)
     df_con, dist = subject_comparison(df_sim, outdir_s, dset=modif)
+
+    with open(outdir_s / "sorting.txt", "w") as fhandle:
+        fhandle.write(sorting)
+    with open(outdir_s / "distmat.txt", "w") as fhandle:
+        np.savetxt(fhandle, dist)
 
     # Embed all the data using a few different approaches
     if results.embed:
         outdir_e = outdir / "embedding"
-        outdir_e.mkdir(exist_ok=True)
+        outdir_e.mkdir(parents=True, exist_ok=True)
         embed_data(df, outdir_e, dset=modif)
 
 
