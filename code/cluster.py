@@ -131,7 +131,7 @@ def compute_similarity(df: pd.DataFrame, outdir: Path, dset: str) -> \
         plt.savefig(outpattr.format(dset, ss))
 
     os.system("gifski -r 6 -o {0} {1}".format(outdir/ "{0}_individual.gif".format(dset),
-                                              outpattr.format('*', '*')))
+                                              outpattr.format(dset, '*')))
 
     return (pd.DataFrame.from_dict(similarity), ref_order)
 
@@ -216,9 +216,12 @@ def main():
     df_sim, sorting = compute_similarity(df, outdir_s, dset=modif)
     df_con, dist = subject_comparison(df_sim, outdir_s, dset=modif)
 
-    with open(outdir_s / "sorting.txt", "w") as fhandle:
+    basename = str(outdir_s / modif)
+    df_sim.to_hdf(basename + "_similarity.h5", 'dset')
+    df_con.to_hdf(basename + "_consistency.h5", 'dset')
+    with open(basename + "_sorting.txt", "w") as fhandle:
         fhandle.write(sorting)
-    with open(outdir_s / "distmat.txt", "w") as fhandle:
+    with open(basename + "_distmat.txt", "w") as fhandle:
         np.savetxt(fhandle, dist)
 
     # Embed all the data using a few different approaches
