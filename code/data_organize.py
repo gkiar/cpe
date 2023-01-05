@@ -5,7 +5,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 import pyarrow.parquet as pq
 import pyarrow as pa
-import pandas as pd
+import networkx as nx
 import numpy as np
 import os
 
@@ -64,18 +64,24 @@ def dummy_loadtxt(path: Path) -> np.array:
 
 
 def grab_mat(path: Path, N: int, dtype:type = np.float32) -> np.array:
-    elist = dummy_loadtxt(path)
-    m = np.zeros((N, N))
-    for e in range(elist.shape[0]):
-        m[int(elist[e,0]), int(elist[e,1])] = elist[e,2]
     locs = np.triu_indices(N)
+    if path.suffix == '.ssv':
+        elist = dummy_loadtxt(path)
+        m = np.zeros((N, N))
+        for e in range(elist.shape[0]):
+            m[int(elist[e,0]), int(elist[e,1])] = elist[e,2]
+    elif path.suffix == '.graphml':
+        g = nx.read_graphml(path)
+        m = nx.to_numpy_array(g)
+        del g
     return m[locs].astype(dtype)
 
 
 def search_and_construct(dset: Path, dname: str, output: Path,
-                         parcellation: str="aal") -> Path:
+                         parcellation: str="aal",
+                         extension: str="graphml") -> Path:
     # Grab filelist & extract info
-    fls = list(Path(dset).rglob("*.ssv"))
+    fls = list(Path(dset).rglob("*.{0}".format(extension)))
 
     N = atlas_lut[parcellation]
     df_dict = [extract_info(f, N) for f in fls]
@@ -94,17 +100,22 @@ def main():
     parser.add_argument("output_path")
     parser.add_argument("--parcellation", "-p", default='aal',
                         choices=['cc2', 'hox', 'aal', 'des'])
+    parser.add_argument("--extension", "-e", default='graphml',
+                        choices=['graphml', 'ssv'])
 
     # Basic parameter setup
     results = parser.parse_args()
     dset = Path(results.dataset_path)
     oloc = Path(results.output_path)
     parc = results.parcellation
+    ext = results.extension
 
     futures, dbpaths = [], []
 
     with ProcessPoolExecutor(max_workers=8) as pool:
         for d in os.listdir(dset):
+            if d.endswith('tgz'):
+                continue
             for p in os.listdir(dset / d / "graphs"):
                 if p.endswith('.rds') or parc not in p:
                     continue
@@ -112,8 +123,8 @@ def main():
                 outdir = oloc / d
                 outdir.mkdir(exist_ok = True)
 
-                futures.append(pool.submit(search_and_construct,
-                                           datadir, d, outdir, parc))
+                futures.append(pool.submit(search_and_construct, datadir,
+                                           d, outdir, parc, ext))
 
     for future in as_completed(futures):
         dbpaths.append(future.result())
