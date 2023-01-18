@@ -87,8 +87,8 @@ def embed_data(df: pd.DataFrame, outdir: Path, dset: str,
         fig.write_image(outdir / "{0}_{1}_embedding.pdf".format(dset, ename))
 
 
-def compute_similarity(df: pd.DataFrame, outdir: Path, dset: str) -> \
-                                                      (pd.DataFrame, str):
+def compute_similarity(df: pd.DataFrame, outdir: Path, dset: str,
+                       plot: bool = False) -> (pd.DataFrame, str):
     # Define columns of interest (COIs) and get unique subject x session combos
     cois = ['gsr', 'alignment', 'filtering', 'scrubbing']
     subses = df[['subject', 'session']].value_counts().index
@@ -125,30 +125,27 @@ def compute_similarity(df: pd.DataFrame, outdir: Path, dset: str) -> \
             'rank_corr' : rank_corr
         }]
 
-        # Plot
-        plt.imshow(rank_corr)
-        plt.title("{0} {1}".format(dset, ss))
-        plt.savefig(outpattr.format(dset, ss))
+        if plot:
+            # Plot
+            plt.imshow(rank_corr)
+            plt.title("{0} {1}".format(dset, ss))
+            plt.savefig(outpattr.format(dset, ss))
 
-    os.system("gifski -r 6 -o {0} {1}".format(outdir/ "{0}_individual.gif".format(dset),
-                                              outpattr.format(dset, '*')))
+    if plot:
+        os.system("gifski -r 6 -o {0} {1}".format(outdir/ "{0}_individual.gif".format(dset),
+                                                  outpattr.format(dset, '*')))
 
     return (pd.DataFrame.from_dict(similarity), ref_order)
 
 
-def subject_comparison(df: pd.DataFrame, outdir: Path, dset: str) -> \
-                                                (pd.DataFrame, np.array):
+def subject_comparison(df: pd.DataFrame) -> (np.array):
     """
     Inputs:
       df: pd.DataFrame
             Should contain ranked similarity matrices. Expected columns:
             [subject, session, corr, rank_corr]
-      outdir: Path
-              Location for saving output data and plots
     
     Returns:
-      pd.DataFrame
-        Will contain pairwise similarity scores across all rows in df
       np.array
         Will contain an N x N matrix of similarity scores, where N is the
         number of rows in df
@@ -166,28 +163,14 @@ def subject_comparison(df: pd.DataFrame, outdir: Path, dset: str) -> \
         for jdx, r2 in df.iterrows():
             if jdx < idx:
                 continue
+
             # Compute Kendall Tau statistic (aka bubble-sort distance)
             csim = kendalltau(r1['rank_corr'], r2['rank_corr'])[0]
-
             dist[idx, jdx] = csim
-
-            # Prepare dataframe entry
-            consistency += [{
-                'subject1': r1['subject'],
-                'session1': r1['session'],
-                'subject2': r2['subject'],
-                'session2': r2['session'],
-                'consistency': csim
-            }]
 
     # Complete the matrix
     dist += dist.T - np.eye(N)
-
-    # Plot
-    sns.clustermap(dist)
-    plt.savefig(outdir / "{0}_consistency.png".format(dset))
-
-    return (pd.DataFrame.from_dict(consistency), dist)
+    return dist
 
 
 def main():
@@ -197,6 +180,8 @@ def main():
     parser.add_argument("output_path", help="Directory for writing outputs")
     parser.add_argument("--atlas", choices=["des", "hox", "cc2", "aal"],
                         default="des", help="Parcellation ID to analyze")
+    parser.add_argument("--plot", action="store_true", help="Use if you want "
+                        "to visualize data")
     parser.add_argument("--embed", action="store_true", help="Flag determining"
                         " whether or not to produce tSNE, MSD, and SE plots")
 
@@ -206,19 +191,21 @@ def main():
     outdir = Path(results.output_path) / path.name
     outdir.mkdir(parents=True, exist_ok=True)
     modif = str(path.name) + "_" + results.atlas
+    pl = results.plot
 
     # Grab data
     df = load_and_prepare(path, atlas=results.atlas)
 
     # Compute pipeline similarities, and then consolidate results
-    outdir_s = outdir / "similarities"
-    (outdir_s / "individual").mkdir(parents=True, exist_ok=True)
-    df_sim, sorting = compute_similarity(df, outdir_s, dset=modif)
-    df_con, dist = subject_comparison(df_sim, outdir_s, dset=modif)
+    outdir_s = outdir
+    if pl:
+        (outdir_s / "individual").mkdir(parents=True, exist_ok=True)
+    df_sim, sorting = compute_similarity(df, outdir_s, dset=modif, plot=pl)
+    dist = subject_comparison(df_sim) 
 
+    # Write out results
     basename = str(outdir_s / modif)
     df_sim.to_hdf(basename + "_similarity.h5", 'dset')
-    df_con.to_hdf(basename + "_consistency.h5", 'dset')
     with open(basename + "_sorting.txt", "w") as fhandle:
         fhandle.write(sorting)
     with open(basename + "_distmat.txt", "w") as fhandle:
