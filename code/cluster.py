@@ -22,6 +22,14 @@ from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics import adjusted_mutual_info_score, adjusted_rand_score
 
 
+atlas_lut = {
+    "des": "Desikan",
+    "aal": "AAL",
+    "hox": "Harvard-Oxford",
+    "cc2": "Craddock 200"
+}
+mpl.rcParams.update({"font.size": 26, "axes.linewidth": 4})
+
 def load_and_stack(bp: Union[str, Path], pattern: str=None) -> pd.DataFrame:
     # Find, load, and stack all relevant dfs
     df_dict = {_: pd.read_hdf(_) for _ in bp.rglob(pattern)}
@@ -54,8 +62,9 @@ def reindex_clusters(values: np.array, order: np.array=np.empty(0)) \
     return new_values
 
 
-def cluster_subjects(df: pd.DataFrame, dmat: np.array, anno: bool=False,
-                            plot_title: str='') -> (np.array, pd.DataFrame):
+def cluster_subjects(df: pd.DataFrame, dmat: np.array, ofile: Path,
+                     anno: bool=True) \
+                                               -> (np.array, pd.DataFrame):
     # Takes datadrame and a distance matrix, and returns clusterings
     
     # Invert normalized distance matrix to be interpretted as similarity matrix
@@ -68,12 +77,11 @@ def cluster_subjects(df: pd.DataFrame, dmat: np.array, anno: bool=False,
 
     # Fit clustering, and re-sort clusters according to size, and grab counts
     values = clf.fit_predict(smat)
-    print(values)
     values = reindex_clusters(values)
     labels, counts = np.unique(values, return_counts=True)
 
     # Extract and plot cluster signatures
-    fig = plt.figure(figsize=(20, len(labels)*5))
+    fig = plt.figure(figsize=(len(labels)*6, 6))
 
     clustering = []
     for _, (l, c) in enumerate(zip(labels, counts)):
@@ -92,35 +100,41 @@ def cluster_subjects(df: pd.DataFrame, dmat: np.array, anno: bool=False,
         plt.xticks([])
         if anno:
             plt.xlabel('Label: {0}  |  N: {1}'.format(l, len(locs)))
-            plt.title(plot_title)
 
-    plt.show()
+    plt.tight_layout()
+    plt.savefig(ofile)
+    plt.close()
     return values, clustering
 
 
-def plot_clustered_dset(dmat: np.array, label_list: np.array) -> None:
+def plot_clustered_dset(dmat: np.array, label_list: np.array, ofile: Path,
+                                                           title: str) -> None:
     cluster_sizes = [len(_) for _ in label_list]
     start_points = [sum(cluster_sizes[:_]) for _ in range(len(cluster_sizes))]
 
     order = np.concatenate(label_list)
     resorted = dmat[:, order][order]
     
-    f = plt.figure(figsize=(10, 10))
+    f = plt.figure(figsize=(15, 15))
     ax = f.add_subplot(111)
     plt.imshow(resorted, cmap='inferno')
 
     for s, l in zip(start_points, cluster_sizes):
-        rect = patches.Rectangle((s-.5, s-0.5), l, l, linewidth=3,
-                                 edgecolor='w', facecolor='none')
+        rect = patches.Rectangle((s-.5, s-0.5), l, l, linewidth=6,
+                                 edgecolor='w', facecolor='none', zorder=10)
         ax.add_patch(rect)
 
     plt.yticks([])
     plt.xticks([])
+    plt.title(title)
+    plt.tight_layout()
 
-    plt.show()
+    plt.savefig(ofile)
+    plt.close()
 
 
-def single_study_eval(df_subs: pd.DataFrame, df_dist: pd.DataFrame) -> None:
+def single_study_eval(df_subs: pd.DataFrame, df_dist: pd.DataFrame,
+                                                        odir: Path) -> None:
     # Do clustering, plotting, & similarity computation for each dataset
 
     combinations = df_subs.value_counts(['dataset', 'atlas']).index
@@ -128,36 +142,52 @@ def single_study_eval(df_subs: pd.DataFrame, df_dist: pd.DataFrame) -> None:
     # Define convenience slicing lambda
     slice_da = lambda _df, dset, atlas: _df[(_df['dataset'] == dset) &
                                             (_df['atlas'] == atlas)]
-
-    clustering = []
+    membership = []
+    clusters = []
     for ds, at in combinations:
         t_subs = slice_da(df_subs, ds, at)
         t_dist = slice_da(df_dist, ds, at)['distance'].values[0]
 
-        t_pt = "{0} ({1})".format(ds, at)
-        t_labels, t_clust = cluster_subjects(t_subs, t_dist, plot_title=t_pt)
+        att = atlas_lut[at]
+        title = "{0} — {1} Parcellation".format(ds, att)
+        t_odir = odir / ds
+        t_odir.mkdir(parents=True, exist_ok=True)
+        t_ofile = t_odir / "{0}_signature.pdf".format(at)
+        t_labels, t_clust = cluster_subjects(t_subs, t_dist, t_ofile)
 
-        clustering += [{
+        membership += [{
             "dataset": ds,
             "atlas": at,
             "labels": t_labels,
-            "clustering": t_clust
         }]
-        
+
         label_list = [_['members'] for _ in t_clust]
-        print(ds, at, np.mean(t_dist), np.std(t_dist))
-        plot_clustered_dset(t_dist, label_list)
+
+        t_clust = pd.DataFrame.from_dict(t_clust)
+        t_clust["dataset"] = ds
+        t_clust["atlas"] = at
+        clusters += [ t_clust ]
+
+        mn, sd = np.mean(t_dist), np.std(t_dist)
+        title = "{0}\n({1:.2f} ± {2:.2f})".format(title, mn, sd)
+        t_ofile = t_odir / "{0}_clustering.pdf".format(at)
+        plot_clustered_dset(t_dist, label_list, t_ofile, title=title)
+
+    return pd.DataFrame.from_dict(membership), pd.concat(clusters)
 
 
 def main():
     parser = ArgumentParser()
     parser.add_argument("dset", help="Path to dataset director(y/ies)")
+    parser.add_argument("outdir", help="Path to output directory")
 
     results = parser.parse_args()
 
     dset = Path(results.dset)
+    odir = Path(results.outdir)
 
     # Load dataframes and distance matrices
+    # TODO: update up-stream script to use pickle instead of hdf5
     df_subs = load_and_stack(dset, pattern="*similarity*h5")
     dists = [{ 'dataset': _.name.split('_')[0],
                'atlas':_.name.split('_')[1],
@@ -165,7 +195,11 @@ def main():
              for _ in dset.rglob('*distmat*txt')]
     df_dist = pd.DataFrame.from_dict(dists)
 
-    single_study_eval(df_subs, df_dist)
+    membership, clustering = single_study_eval(df_subs, df_dist, odir)
+    membership.to_pickle(odir / "cluster_membership.pkl")
+    clustering.to_pickle(odir / "cluster_definitions.pkl")
+
+    import pdb; pdb.set_trace()
 
 
 if __name__ == "__main__":
