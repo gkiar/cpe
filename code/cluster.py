@@ -144,35 +144,48 @@ def single_study_eval(df_subs: pd.DataFrame, df_dist: pd.DataFrame,
                                             (_df['atlas'] == atlas)]
     membership = []
     clusters = []
+
+    # For each dataset and atlas...
     for ds, at in combinations:
+        print(ds, at)
+
+        # Grab the similarity matrices and distance matrices for current ds, at
         t_subs = slice_da(df_subs, ds, at)
         t_dist = slice_da(df_dist, ds, at)['distance'].values[0]
 
+        # Prepare metadata to help with plotting & storage
         att = atlas_lut[at]
         title = "{0} — {1} Parcellation".format(ds, att)
         t_odir = odir / ds
         t_odir.mkdir(parents=True, exist_ok=True)
         t_ofile = t_odir / "{0}_signature.pdf".format(at)
+
+        # Cluster & plot cluster signatures
         t_labels, t_clust = cluster_subjects(t_subs, t_dist, t_ofile)
 
+        # Extract labels and prepare metadata for dataset-wide plotting
+        label_list = [_['members'] for _ in t_clust]
+        mn, sd = np.mean(t_dist), np.std(t_dist)
+        title = "{0}\n({1:.2f} ± {2:.2f})".format(title, mn, sd)
+        t_ofile = t_odir / "{0}_clustering.pdf".format(at)
+
+        # Plot clustered subject signatures
+        plot_clustered_dset(t_dist, label_list, t_ofile, title=title)
+
+        # Create convenience table of clustering results
         membership += [{
             "dataset": ds,
             "atlas": at,
             "labels": t_labels,
         }]
-
-        label_list = [_['members'] for _ in t_clust]
-
+        
+        # Add dataset/atlas annotations to cluster data, and store
         t_clust = pd.DataFrame.from_dict(t_clust)
         t_clust["dataset"] = ds
         t_clust["atlas"] = at
         clusters += [ t_clust ]
 
-        mn, sd = np.mean(t_dist), np.std(t_dist)
-        title = "{0}\n({1:.2f} ± {2:.2f})".format(title, mn, sd)
-        t_ofile = t_odir / "{0}_clustering.pdf".format(at)
-        plot_clustered_dset(t_dist, label_list, t_ofile, title=title)
-
+    # Return a single dataframe for each of the two storage containers
     return pd.DataFrame.from_dict(membership), pd.concat(clusters)
 
 
@@ -195,11 +208,10 @@ def main():
              for _ in dset.rglob('*distmat*txt')]
     df_dist = pd.DataFrame.from_dict(dists)
 
+    # Save clustered data to disk
     membership, clustering = single_study_eval(df_subs, df_dist, odir)
     membership.to_pickle(odir / "cluster_membership.pkl")
     clustering.to_pickle(odir / "cluster_definitions.pkl")
-
-    import pdb; pdb.set_trace()
 
 
 if __name__ == "__main__":
