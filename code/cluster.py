@@ -133,6 +133,24 @@ def plot_clustered_dset(dmat: np.array, label_list: np.array, ofile: Path,
     plt.close()
 
 
+def plot_all_difference_matrices(df: pd.DataFrame, ofile: Path):
+
+    n_cols = 10
+    n_rows = int(len(df) / n_cols) + 1
+
+    fig = plt.figure(figsize=(n_cols*2, n_rows*2))
+
+    for idx, row in df.iterrows():
+        fig.add_subplot(n_rows, n_cols, idx+1)
+        plt.imshow(row.rank_corr)
+        plt.yticks([])
+        plt.xticks([])
+
+    plt.tight_layout()
+    plt.savefig(ofile)
+    plt.close()
+
+
 def single_study_eval(df_subs: pd.DataFrame, df_dist: pd.DataFrame,
                                                         odir: Path) -> None:
     # Do clustering, plotting, & similarity computation for each dataset
@@ -158,10 +176,13 @@ def single_study_eval(df_subs: pd.DataFrame, df_dist: pd.DataFrame,
         title = "{0} — {1} Parcellation".format(ds, att)
         t_odir = odir / ds
         t_odir.mkdir(parents=True, exist_ok=True)
-        t_ofile = t_odir / "{0}_signature.pdf".format(at)
+        t_ofile1 = t_odir / "{0}_signature.pdf".format(at)
+        t_ofile2 = t_odir / "{0}_signature_all.pdf".format(at)
 
         # Cluster & plot cluster signatures
-        t_labels, t_clust = cluster_subjects(t_subs, t_dist, t_ofile)
+        t_labels, t_clust = cluster_subjects(t_subs, t_dist, t_ofile1)
+        # TODO: make the below not crash for large images
+        # plot_all_difference_matrices(t_subs, t_ofile2)
 
         # Extract labels and prepare metadata for dataset-wide plotting
         label_list = [_['members'] for _ in t_clust]
