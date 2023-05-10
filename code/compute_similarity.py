@@ -21,8 +21,8 @@ from sklearn.manifold import TSNE, SpectralEmbedding, MDS
 from sklearn.cluster import AgglomerativeClustering
 from scipy.stats import rankdata, kendalltau
 
-
-with open('./cmap/cmap.json', 'r') as fhandle:
+cfile = os.path.join(os.path.dirname(__file__), './cmap/cmap.json')
+with open(cfile, 'r') as fhandle:
     colors = json.load(fhandle)
 
 def colour(row: pd.Series) -> str:
