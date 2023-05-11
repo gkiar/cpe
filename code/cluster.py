@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from pysankey2 import Sankey
 from pathlib import Path
-from typing import Union
+from typing import Union, Tuple
 
 import os.path as op
 import pandas as pd
@@ -64,7 +64,7 @@ def reindex_clusters(values: np.array, order: np.array=np.empty(0)) \
 
 def cluster_subjects(df: pd.DataFrame, dmat: np.array, ofile: Path,
                      anno: bool=True) \
-                                               -> (np.array, pd.DataFrame):
+                                               -> Tuple[np.array, pd.DataFrame]:
     # Takes datadrame and a distance matrix, and returns clusterings
     
     # Invert normalized distance matrix to be interpretted as similarity matrix
@@ -233,6 +233,7 @@ def main():
     membership, clustering = single_study_eval(df_subs, df_dist, odir)
     membership.to_pickle(odir / "cluster_membership.pkl")
     clustering.to_pickle(odir / "cluster_definitions.pkl")
+    df_subs.to_pickle(odir / "similarity.pkl")
 
 
 if __name__ == "__main__":
